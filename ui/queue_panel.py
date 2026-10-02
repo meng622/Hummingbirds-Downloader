@@ -267,10 +267,18 @@ class QueuePanel(QWidget):
         self.status_message.emit("解析中…")
         self.parse_btn.setEnabled(False)
 
-        ytdlp_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "yt-dlp.exe"
-        )
+        if getattr(sys, "frozen", False):
+            base = os.path.dirname(sys.executable)
+            internal = os.path.join(base, "_internal")
+            if os.path.isfile(os.path.join(internal, "yt-dlp.exe")):
+                ytdlp_path = os.path.join(internal, "yt-dlp.exe")
+            else:
+                ytdlp_path = os.path.join(base, "yt-dlp.exe")
+        else:
+            ytdlp_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "yt-dlp.exe"
+            )
         cookie_path = self.options_panel.cookie_manager.get_cookie_path()
 
         self.parse_worker = ParseWorker(url, ytdlp_path, cookie_path)

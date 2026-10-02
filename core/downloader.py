@@ -38,11 +38,19 @@ class YtDlpDownloader:
 
     def __init__(self, ytdlp_path: Optional[str] = None):
         if ytdlp_path is None:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            if sys.platform.startswith("win"):
-                ytdlp_path = os.path.join(base, "yt-dlp.exe")
+            if getattr(sys, "frozen", False):
+                base = os.path.dirname(sys.executable)
+                internal = os.path.join(base, "_internal")
+                if os.path.isfile(os.path.join(internal, "yt-dlp.exe")):
+                    ytdlp_path = os.path.join(internal, "yt-dlp.exe")
+                else:
+                    ytdlp_path = os.path.join(base, "yt-dlp.exe")
             else:
-                ytdlp_path = os.path.join(base, "yt-dlp")
+                base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                if sys.platform.startswith("win"):
+                    ytdlp_path = os.path.join(base, "yt-dlp.exe")
+                else:
+                    ytdlp_path = os.path.join(base, "yt-dlp")
         self.ytdlp_path = ytdlp_path
         self._process: Optional[subprocess.Popen] = None
         self.on_process_start = None

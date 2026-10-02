@@ -17,10 +17,18 @@ class ThemeManager:
     def __init__(self, app: QApplication):
         self.app = app
         self.settings = QSettings("VideoDownloader", "Theme")
-        self.assets_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "assets"
-        )
+        if getattr(sys, "frozen", False):
+            base = os.path.dirname(sys.executable)
+            internal = os.path.join(base, "_internal")
+            if os.path.isdir(os.path.join(internal, "assets")):
+                self.assets_dir = os.path.join(internal, "assets")
+            else:
+                self.assets_dir = os.path.join(base, "assets")
+        else:
+            self.assets_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "assets"
+            )
         self._current_mode = self.settings.value("mode", THEME_SYSTEM)
 
     def current_mode(self) -> str:

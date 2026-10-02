@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 
 class CookieManager:
@@ -7,7 +8,10 @@ class CookieManager:
 
     def __init__(self, config_path: str | None = None):
         if config_path is None:
-            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if getattr(sys, "frozen", False):
+                base = os.path.dirname(sys.executable)
+            else:
+                base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             config_path = os.path.join(base, "config.json")
         self.config_path = config_path
         self._config = self._load()
