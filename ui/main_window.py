@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
 
     def _init_statusbar(self):
         status = QStatusBar()
+        status.setSizeGripEnabled(False)
         self.setStatusBar(status)
 
         self.status_label = QLabel("就緒")
