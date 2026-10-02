@@ -10,6 +10,8 @@ from PyQt6.QtCore import pyqtSignal
 
 from core.worker import DownloadWorker
 from core.cookie_manager import CookieManager
+from core.parse_worker import ParseWorker
+from ui.preview_dialog import PreviewDialog
 
 
 class DownloadPanel(QWidget):
@@ -19,6 +21,7 @@ class DownloadPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.worker: DownloadWorker | None = None
+        self.parse_worker: ParseWorker | None = None
         self.cookie_manager = CookieManager()
         self._init_ui()
         self._load_cookie_state()
@@ -123,6 +126,10 @@ class DownloadPanel(QWidget):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
 
+        self.parse_btn = QPushButton("解析")
+        self.parse_btn.clicked.connect(self._on_parse)
+        btn_layout.addWidget(self.parse_btn)
+
         self.download_btn = QPushButton("開始下載")
         self.download_btn.setObjectName("downloadBtn")
         self.download_btn.clicked.connect(self._on_download)
@@ -220,6 +227,51 @@ class DownloadPanel(QWidget):
         self.worker.finished_err.connect(self._on_finished_err)
         self.worker.start()
 
+    def _on_parse(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.log_message.emit("[警告] 請先輸入網址")
+            return
+
+        self.log_message.emit(f"[解析] 開始解析：{url}")
+        self.status_message.emit("解析中…")
+        self.parse_btn.setEnabled(False)
+
+        ytdlp_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "yt-dlp.exe"
+        )
+        cookie_path = self.cookie_manager.get_cookie_path()
+
+        self.parse_worker = ParseWorker(url, ytdlp_path, cookie_path)
+        self.parse_worker.log.connect(self.log_message.emit)
+        self.parse_worker.finished_ok.connect(self._on_parse_ok)
+        self.parse_worker.finished_err.connect(self._on_parse_err)
+        self.parse_worker.start()
+
+    def _on_parse_ok(self, items: list):
+        self.status_message.emit("解析完成")
+        self.parse_btn.setEnabled(True)
+
+        dlg = PreviewDialog(items, self)
+        if dlg.exec() == PreviewDialog.DialogCode.Accepted:
+            if dlg.selected_urls:
+                self.url_input.setText(dlg.selected_urls[0])
+                self.log_message.emit(
+                    f"[解析] 已選 {len(dlg.selected_urls)} 條，"
+                    f"而家填入第一條，撳「開始下載」"
+                )
+                if len(dlg.selected_urls) > 1:
+                    self.log_message.emit(
+                        "[提示] 多條下載功能（C）尚未實作，"
+                        "目前只會下載第一條"
+                    )
+
+    def _on_parse_err(self, msg: str):
+        self.status_message.emit("解析失敗")
+        self.log_message.emit(f"[錯誤] {msg}")
+        self.parse_btn.setEnabled(True)
+
     def _on_cancel(self):
         if self.worker and self.worker.isRunning():
             self.log_message.emit("[取消] 正在終止下載…")
@@ -246,6 +298,7 @@ class DownloadPanel(QWidget):
 
     def _set_running(self, running: bool):
         self.download_btn.setEnabled(not running)
+        self.parse_btn.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
         self.url_input.setEnabled(not running)
         self.platform_combo.setEnabled(not running)
