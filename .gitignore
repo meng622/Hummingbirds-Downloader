@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+env/
+
+# PyInstaller
+dist/
+build/
+*.spec.bak
+
+# 程式運行時生成
+downloads/*
+!downloads/.gitkeep
+.cache/
+.config/
+.local/
+.tmp/
+config.json
+*.log
+
+# 外部二進制檔案（唔入 git）
+yt-dlp.exe
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+mkvmerge.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
