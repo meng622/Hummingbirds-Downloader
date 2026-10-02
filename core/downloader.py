@@ -240,6 +240,89 @@ class YtDlpDownloader:
 
         yield LogEvent(f"[彈幕] ASS 已轉換：{ass_path}")
 
+        # 合成彈幕（如果用戶揀咗）
+        if options.get("mux_danmaku"):
+            video_path = self._find_latest_video(out_dir)
+            if not video_path:
+                yield LogEvent("[合成] 搵唔到對應嘅 mp4，跳過合成")
+                return
+
+            yield LogEvent(f"[合成] 開始 mux：{video_path}")
+            ok, result = self._mux_danmaku(video_path, ass_path, out_dir)
+            if not ok:
+                yield LogEvent(f"[合成] 失敗：{result}")
+                return
+            yield LogEvent(f"[合成] 完成：{result}")
+
+            # 刪除原始 mp4
+            try:
+                os.remove(video_path)
+                yield LogEvent(f"[合成] 已刪除原片：{video_path}")
+            except Exception as e:
+                yield LogEvent(f"[合成] 刪除原片失敗：{e}")
+
+            # 刪除 XML
+            try:
+                os.remove(xml_path)
+                yield LogEvent(f"[彈幕] 已刪除 XML：{xml_path}")
+            except Exception as e:
+                yield LogEvent(f"[彈幕] 刪除 XML 失敗：{e}")
+
+            # 保留 .ass
+
+    def _mux_danmaku(self, video_path: str, ass_path: str, out_dir: str) -> tuple[bool, str]:
+        """用 mkvmerge 將 ASS 合成為 MKV 字幕軌。成功返回 (True, mkv 路徑)，失敗返回 (False, 錯誤訊息)。"""
+        import subprocess
+
+        base = os.path.dirname(os.path.abspath(self.ytdlp_path))
+        mkvmerge = os.path.join(base, "mkvmerge.exe")
+        if not os.path.isfile(mkvmerge):
+            return False, f"搵唔到 mkvmerge.exe：{mkvmerge}"
+
+        name, _ = os.path.splitext(video_path)
+        output_path = f"{name}.mkv"
+
+        args = [
+            mkvmerge,
+            "-o", output_path,
+            "--language", "0:chi",
+            "--track-name", "0:彈幕",
+            video_path,
+            ass_path,
+        ]
+
+        try:
+            result = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0,
+            )
+            if result.returncode != 0:
+                return False, result.stdout[-500:] if result.stdout else "mkvmerge 執行失敗"
+            return True, output_path
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def _find_latest_video(out_dir: str) -> str | None:
+        """搵 out_dir 入面最新嘅 mp4 檔（排除 _danmaku.mp4）。"""
+        try:
+            files = [
+                os.path.join(out_dir, f)
+                for f in os.listdir(out_dir)
+                if f.lower().endswith(".mp4")
+                and not f.lower().endswith("_danmaku.mp4")
+            ]
+            if not files:
+                return None
+            return max(files, key=os.path.getmtime)
+        except Exception:
+            return None
+
     # ---------- 取消 ----------
 
     def cancel(self):
