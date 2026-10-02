@@ -292,7 +292,10 @@ class QueuePanel(QWidget):
         self.parse_btn.setEnabled(True)
 
         dlg = PreviewDialog(items, self)
-        if dlg.exec() == PreviewDialog.DialogCode.Accepted:
+        result = dlg.exec()
+
+        if result == PreviewDialog.DialogCode.Accepted:
+            # 「開始下載」：加入佇列 + 立即開始
             if dlg.selected_urls:
                 options = self.options_panel.get_options()
                 for url in dlg.selected_urls:
@@ -303,6 +306,17 @@ class QueuePanel(QWidget):
                 if not self.task_queue.is_running:
                     self._set_running(True)
                     self.task_queue.start()
+
+        elif result == 2:
+            # 「加入佇列」：只加入，唔自動開始
+            if dlg.selected_urls:
+                options = self.options_panel.get_options()
+                for url in dlg.selected_urls:
+                    self.task_queue.add_task(url, options)
+                self.log_message.emit(
+                    f"[解析] 已加入 {len(dlg.selected_urls)} 條任務到佇列（等待手動開始）"
+                )
+                self.status_message.emit("已加入佇列")
 
     def _on_parse_err(self, msg: str):
         self.status_message.emit("解析失敗")

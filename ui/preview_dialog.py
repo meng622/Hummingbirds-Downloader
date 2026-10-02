@@ -52,6 +52,10 @@ class PreviewDialog(QDialog):
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
 
+        self.add_queue_btn = QPushButton("加入佇列")
+        self.add_queue_btn.clicked.connect(self._on_add_queue)
+        btn_layout.addWidget(self.add_queue_btn)
+
         self.ok_btn = QPushButton("開始下載")
         self.ok_btn.setObjectName("downloadBtn")
         self.ok_btn.clicked.connect(self._on_ok)
@@ -81,6 +85,23 @@ class PreviewDialog(QDialog):
             cb = self.table.cellWidget(row, 0)
             if cb:
                 cb.setChecked(False)
+
+    def _on_add_queue(self):
+        """加入佇列，唔會自動開始。"""
+        self.selected_urls = []
+        for row in range(self.table.rowCount()):
+            cb = self.table.cellWidget(row, 0)
+            if cb and cb.isChecked():
+                url = self.items[row]["url"]
+                if url:
+                    self.selected_urls.append(url)
+
+        if not self.selected_urls:
+            QMessageBox.warning(self, "提示", "請至少揀一條片")
+            return
+
+        # 用自訂 return code 區分「加入佇列」同「開始下載」
+        self.done(2)   # 2 = 加入佇列
 
     def _on_ok(self):
         self.selected_urls = []
