@@ -235,10 +235,14 @@ class QueuePanel(QWidget):
 
     def _on_download(self):
         url = self.options_panel.get_url()
-        if not url:
-            self.log_message.emit("[警告] 請先輸入網址")
-            return
-        self._on_add_to_queue()
+
+        # 如果網址欄有嘢，而且同佇列入面任何一條都唔同，就加入新任務
+        if url:
+            url_exists = any(t.url == url for t in self.task_queue.tasks)
+            if not url_exists:
+                self._on_add_to_queue()
+
+        # 開始執行
         if not self.task_queue.is_running:
             self._set_running(True)
             self.task_queue.start()
