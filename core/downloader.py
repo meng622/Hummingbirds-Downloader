@@ -63,14 +63,19 @@ class YtDlpDownloader:
             "PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|"
             "%(progress._eta_str)s|%(progress.downloaded_bytes)s|"
             "%(progress.total_bytes_estimate)s",
-            "--print", "after_move:FILE|%(filepath)s",
         ]
 
         # 輸出資料夾
         out_dir = options.get("output_dir") or "./downloads"
         os.makedirs(out_dir, exist_ok=True)
         args += ["-P", out_dir]
-        args += ["-o", "%(title).200B [%(id)s].%(ext)s"]
+
+        # 檔名：唔要 ID，清走 Emoji
+        args += ["-o", "%(title).200B.%(ext)s"]
+        args += ["--replace-in-metadata", "title", r"[^\w\s\-\.\(\)\[\]\u4e00-\u9fff]", ""]
+
+        # 強制合併成 MP4
+        args += ["--merge-output-format", "mp4"]
 
         # 分辨率
         res = options.get("resolution", "最佳畫質")
@@ -105,7 +110,7 @@ class YtDlpDownloader:
 
         args.append(url)
         return args
-    
+
     # ---------- 執行下載 ----------
 
     def download(self, url: str, options: dict) -> Generator[Event, None, None]:
@@ -114,7 +119,12 @@ class YtDlpDownloader:
             return
 
         args = self.build_args(url, options)
+        out_dir = options.get("output_dir") or "./downloads"
         yield LogEvent(f"[CMD] {' '.join(args)}")
+
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
 
         try:
             self._process = subprocess.Popen(
@@ -126,6 +136,7 @@ class YtDlpDownloader:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                env=env,
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0,
             )
         except Exception as e:
@@ -155,16 +166,26 @@ class YtDlpDownloader:
                 )
                 continue
 
-            # 檔案完成
-            if line.startswith("FILE|"):
-                yield LogEvent(f"[完成] {line[5:]}")
-                continue
-
             # 其他輸出
             yield LogEvent(line)
 
+        # 等 yt-dlp 完成
         code = self._process.wait()
         self._process = None
+
+        # 自己掃描輸出資料夾，搵最新檔案（避免 yt-dlp 中文路徑亂碼）
+        if code == 0:
+            try:
+                files = [
+                    os.path.join(out_dir, f)
+                    for f in os.listdir(out_dir)
+                    if os.path.isfile(os.path.join(out_dir, f))
+                ]
+                if files:
+                    latest = max(files, key=os.path.getmtime)
+                    yield LogEvent(f"[完成] {latest}")
+            except Exception as e:
+                yield LogEvent(f"[警告] 掃描輸出資料夾失敗：{e}")
 
         if code == 0:
             yield FinishEvent(True, "下載完成 ✅")
