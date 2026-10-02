@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
-    QStatusBar, QLabel, QApplication
+    QStatusBar, QLabel, QComboBox, QApplication
 )
 from PyQt6.QtCore import Qt
 
@@ -8,6 +8,7 @@ from ui.options_panel import OptionsPanel
 from ui.queue_panel import QueuePanel
 from ui.log_panel import LogPanel
 from ui.custom_splitter import CustomSplitter
+from core.theme_manager import ThemeManager, THEME_SYSTEM, THEME_LIGHT, THEME_DARK
 
 
 class MainWindow(QMainWindow):
@@ -15,6 +16,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("綜合下載器 v0.1")
         self.resize(1100, 700)
+
+        self.theme_manager = ThemeManager(QApplication.instance())
+        self.theme_manager.apply()
+
         self._init_ui()
         self._init_statusbar()
 
@@ -55,5 +60,22 @@ class MainWindow(QMainWindow):
         self.status_label = QLabel("就緒")
         status.addWidget(self.status_label)
 
+        status.addPermanentWidget(QLabel("主題："))
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["跟隨系統", "淺色", "深色"])
+        self.theme_combo.setFixedWidth(100)
+        mode_map = {
+            THEME_SYSTEM: 0,
+            THEME_LIGHT: 1,
+            THEME_DARK: 2,
+        }
+        self.theme_combo.setCurrentIndex(mode_map.get(self.theme_manager.current_mode(), 0))
+        self.theme_combo.currentIndexChanged.connect(self._on_theme_changed)
+        status.addPermanentWidget(self.theme_combo)
+
     def _on_status(self, msg: str):
         self.status_label.setText(msg)
+
+    def _on_theme_changed(self, index: int):
+        mode = [THEME_SYSTEM, THEME_LIGHT, THEME_DARK][index]
+        self.theme_manager.apply(mode)
