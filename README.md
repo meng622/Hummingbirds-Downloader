@@ -24,5 +24,11 @@ PyQt6 + yt-dlp 嘅綜合影片下載器，支援多平台、彈幕、字幕、�
 
 ### Python 套件
 
+## 免責聲明
+
+本軟件僅供個人學習和研究使用。用戶使用本軟件下載任何內容時，
+應確保符合當地法律法規及相關平台的使用條款。
+開發者不對用戶嘅任何行為負責。
+
 ```bash
 pip install PyQt6 psutil requests biliass pyinstaller
