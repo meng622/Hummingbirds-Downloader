@@ -87,9 +87,25 @@ class YtDlpDownloader:
         elif res in res_map:
             args += ["-S", f"res:{res_map[res]}"]
 
+        # 字幕
+        sub = options.get("subtitle", "不下載")
+        sub_map = {
+            "繁體中文": "zh-Hant",
+            "簡體中文": "zh-Hans",
+            "英文": "en",
+            "日文": "ja",
+        }
+        if sub == "自動":
+            args += ["--write-auto-subs", "--sub-langs", "all", "--convert-subs", "srt"]
+        elif sub in sub_map:
+            args += ["--write-subs", "--sub-langs", sub_map[sub], "--convert-subs", "srt"]
+
+        # 唔要 info.json
+        args += ["--no-write-info-json"]
+
         args.append(url)
         return args
-
+    
     # ---------- 執行下載 ----------
 
     def download(self, url: str, options: dict) -> Generator[Event, None, None]:
