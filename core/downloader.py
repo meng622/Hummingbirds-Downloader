@@ -45,6 +45,7 @@ class YtDlpDownloader:
                 ytdlp_path = os.path.join(base, "yt-dlp")
         self.ytdlp_path = ytdlp_path
         self._process: Optional[subprocess.Popen] = None
+        self.on_process_start = None
 
     # ---------- 檢查 ----------
 
@@ -147,6 +148,12 @@ class YtDlpDownloader:
         except Exception as e:
             yield FinishEvent(False, f"啟動 yt-dlp 失敗：{e}")
             return
+
+        if self.on_process_start and self._process:
+            try:
+                self.on_process_start(self._process.pid)
+            except Exception:
+                pass
 
         progress_re = re.compile(
             r"PROGRESS\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)"

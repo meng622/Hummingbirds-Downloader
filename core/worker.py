@@ -6,10 +6,8 @@ from core.downloader import (
 
 
 class DownloadWorker(QThread):
-    """將 yt-dlp 下載放喺後台執行，唔阻塞 GUI。"""
-
     log = pyqtSignal(str)
-    progress = pyqtSignal(float, str, str, str, str)  # percent, speed, eta, downloaded, total
+    progress = pyqtSignal(float, str, str, str, str)
     finished_ok = pyqtSignal(str)
     finished_err = pyqtSignal(str)
 
@@ -19,12 +17,18 @@ class DownloadWorker(QThread):
         self.options = options
         self.downloader = YtDlpDownloader()
         self._cancelled = False
+        self._paused = False
+        self._process_pid: int | None = None
 
     def run(self):
         try:
+            self.downloader.on_process_start = self._on_process_start
             for event in self.downloader.download(self.url, self.options):
                 if self._cancelled:
                     break
+                if self._paused:
+                    while self._paused and not self._cancelled:
+                        self.msleep(200)
 
                 if isinstance(event, LogEvent):
                     self.log.emit(event.text)
@@ -41,6 +45,41 @@ class DownloadWorker(QThread):
         except Exception as e:
             self.finished_err.emit(f"未預期錯誤：{e}")
 
+    def _on_process_start(self, pid: int):
+        self._process_pid = pid
+
+    def pause(self):
+        self._paused = True
+        self._suspend_process()
+
+    def resume(self):
+        self._paused = False
+        self._resume_process()
+
+    def is_paused(self) -> bool:
+        return self._paused
+
     def cancel(self):
         self._cancelled = True
+        self._paused = False
         self.downloader.cancel()
+
+    def _suspend_process(self):
+        if self._process_pid is None:
+            return
+        try:
+            import psutil
+            p = psutil.Process(self._process_pid)
+            p.suspend()
+        except Exception:
+            pass
+
+    def _resume_process(self):
+        if self._process_pid is None:
+            return
+        try:
+            import psutil
+            p = psutil.Process(self._process_pid)
+            p.resume()
+        except Exception:
+            pass

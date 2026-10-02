@@ -3,15 +3,16 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton,
-    QCheckBox, QGroupBox, QFileDialog, QProgressBar,
-    QMessageBox
+    QCheckBox, QGroupBox, QFileDialog, QMessageBox,
+    QListWidget, QListWidgetItem
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt, QSize
 
-from core.worker import DownloadWorker
 from core.cookie_manager import CookieManager
 from core.parse_worker import ParseWorker
+from core.task_queue import Task, TaskQueue
 from ui.preview_dialog import PreviewDialog
+from ui.task_item_widget import TaskItemWidget
 
 
 class DownloadPanel(QWidget):
@@ -20,25 +21,25 @@ class DownloadPanel(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.worker: DownloadWorker | None = None
-        self.parse_worker: ParseWorker | None = None
         self.cookie_manager = CookieManager()
+        self.parse_worker: ParseWorker | None = None
+        self.task_queue = TaskQueue()
+        self.task_widgets: dict[int, TaskItemWidget] = {}
         self._init_ui()
+        self._connect_queue()
         self._load_cookie_state()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
 
-        # 網址列
         url_layout = QHBoxLayout()
         url_layout.addWidget(QLabel("影片網址："))
         self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("貼上 YouTube / Instagram / Facebook / Bilibili / X 嘅影片連結…")
+        self.url_input.setPlaceholderText("貼上 YouTube / Instagram / Facebook / Bilibili / X 嘅影片或播放列表連結…")
         url_layout.addWidget(self.url_input)
         layout.addLayout(url_layout)
 
-        # 選項區
         options_group = QGroupBox("下載選項")
         grid = QGridLayout(options_group)
         grid.setHorizontalSpacing(15)
@@ -83,7 +84,6 @@ class DownloadPanel(QWidget):
         self.browse_btn.clicked.connect(self._on_browse)
         grid.addWidget(self.browse_btn, 2, 3)
 
-        # ---- Cookie 區 ----
         grid.addWidget(QLabel("Cookies："), 3, 0)
         self.cookie_label = QLabel("未匯入")
         self.cookie_label.setStyleSheet("color: #888;")
@@ -103,24 +103,36 @@ class DownloadPanel(QWidget):
 
         layout.addWidget(options_group)
 
-        # 進度區
-        progress_group = QGroupBox("下載進度")
-        p_layout = QGridLayout(progress_group)
-        p_layout.setHorizontalSpacing(15)
+        # 任務列表
+        queue_group = QGroupBox("下載佇列")
+        queue_layout = QVBoxLayout(queue_group)
 
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setRange(0, 100)
-        self.progress_bar.setValue(0)
-        p_layout.addWidget(self.progress_bar, 0, 0, 1, 3)
+        self.task_list = QListWidget()
+        self.task_list.setAlternatingRowColors(True)
+        self.task_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        queue_layout.addWidget(self.task_list)
 
-        self.speed_label = QLabel("速度：—")
-        self.eta_label = QLabel("剩餘：—")
-        self.size_label = QLabel("大小：—")
-        p_layout.addWidget(self.speed_label, 1, 0)
-        p_layout.addWidget(self.eta_label, 1, 1)
-        p_layout.addWidget(self.size_label, 1, 2)
+        queue_btn_layout = QHBoxLayout()
+        queue_btn_layout.addStretch()
 
-        layout.addWidget(progress_group)
+        self.start_all_btn = QPushButton("全部下載")
+        self.start_all_btn.clicked.connect(self._on_start_all)
+        queue_btn_layout.addWidget(self.start_all_btn)
+
+        self.clear_done_btn = QPushButton("清除已完成")
+        self.clear_done_btn.clicked.connect(self._on_clear_done)
+        queue_btn_layout.addWidget(self.clear_done_btn)
+
+        self.clear_all_btn = QPushButton("清除所有任務")
+        self.clear_all_btn.clicked.connect(self._on_clear_all)
+        queue_btn_layout.addWidget(self.clear_all_btn)
+
+        self.cancel_all_btn = QPushButton("全部取消")
+        self.cancel_all_btn.clicked.connect(self._on_cancel_all)
+        queue_btn_layout.addWidget(self.cancel_all_btn)
+
+        queue_layout.addLayout(queue_btn_layout)
+        layout.addWidget(queue_group)
 
         # 操作按鈕
         btn_layout = QHBoxLayout()
@@ -130,17 +142,136 @@ class DownloadPanel(QWidget):
         self.parse_btn.clicked.connect(self._on_parse)
         btn_layout.addWidget(self.parse_btn)
 
+        self.add_queue_btn = QPushButton("加入佇列")
+        self.add_queue_btn.clicked.connect(self._on_add_to_queue)
+        btn_layout.addWidget(self.add_queue_btn)
+
         self.download_btn = QPushButton("開始下載")
         self.download_btn.setObjectName("downloadBtn")
         self.download_btn.clicked.connect(self._on_download)
         btn_layout.addWidget(self.download_btn)
 
-        self.cancel_btn = QPushButton("取消")
+        self.cancel_btn = QPushButton("取消當前")
         self.cancel_btn.setEnabled(False)
         self.cancel_btn.clicked.connect(self._on_cancel)
         btn_layout.addWidget(self.cancel_btn)
 
         layout.addLayout(btn_layout)
+
+    # ---------- 佇列連接 ----------
+
+    def _connect_queue(self):
+        self.task_queue.task_added.connect(self._on_task_added)
+        self.task_queue.task_updated.connect(self._on_task_updated)
+        self.task_queue.task_finished.connect(self._on_task_finished)
+        self.task_queue.task_removed.connect(self._on_task_removed)
+        self.task_queue.all_finished.connect(self._on_all_finished)
+        self.task_queue.log.connect(self.log_message.emit)
+
+    def _on_task_added(self, idx: int, task: Task):
+        widget = TaskItemWidget(task.url)
+        widget.pause_clicked.connect(lambda i=idx: self._on_pause_task(i))
+        widget.resume_clicked.connect(lambda i=idx: self._on_resume_task(i))
+        widget.delete_clicked.connect(lambda i=idx: self._on_delete_task(i))
+        item = QListWidgetItem()
+        item.setSizeHint(QSize(0, 56))
+        self.task_list.addItem(item)
+        self.task_list.setItemWidget(item, widget)
+        self.task_widgets[idx] = widget
+        self._refresh_task_widget(idx, task)
+
+    def _on_task_updated(self, idx: int, task: Task):
+        self._refresh_task_widget(idx, task)
+
+    def _refresh_task_widget(self, idx: int, task: Task):
+        widget = self.task_widgets.get(idx)
+        if widget is None:
+            return
+        state_map = {
+            Task.STATE_WAITING: "waiting",
+            Task.STATE_RUNNING: "running",
+            Task.STATE_PAUSED: "paused",
+            Task.STATE_DONE: "done",
+            Task.STATE_FAILED: "failed",
+            Task.STATE_CANCELLED: "cancelled",
+        }
+        state = state_map.get(task.state, "waiting")
+        if task.state == Task.STATE_RUNNING:
+            text = f"[{task.progress:.1f}%] {task.url}"
+        elif task.state == Task.STATE_DONE:
+            text = task.url
+        elif task.state == Task.STATE_PAUSED:
+            text = f"[已暫停] {task.url}"
+        else:
+            text = task.url
+        widget.set_state(state, text)
+
+    def _on_task_finished(self, idx: int, task: Task, success: bool):
+        self._refresh_task_widget(idx, task)
+
+    def _on_task_removed(self, idx: int):
+        self._rebuild_task_list()
+
+    def _rebuild_task_list(self):
+        self.task_list.clear()
+        self.task_widgets.clear()
+        for idx, task in enumerate(self.task_queue.tasks):
+            widget = TaskItemWidget(task.url)
+            widget.pause_clicked.connect(lambda i=idx: self._on_pause_task(i))
+            widget.resume_clicked.connect(lambda i=idx: self._on_resume_task(i))
+            widget.delete_clicked.connect(lambda i=idx: self._on_delete_task(i))
+            item = QListWidgetItem()
+            item.setSizeHint(QSize(0, 56))
+            self.task_list.addItem(item)
+            self.task_list.setItemWidget(item, widget)
+            self.task_widgets[idx] = widget
+            self._refresh_task_widget(idx, task)
+
+    def _on_all_finished(self):
+        self._set_running(False)
+        self.status_message.emit("全部完成")
+
+    # ---------- 任務操作 ----------
+
+    def _on_pause_task(self, idx: int):
+        self.task_queue.pause_task(idx)
+
+    def _on_resume_task(self, idx: int):
+        self.task_queue.resume_task(idx)
+
+    def _on_delete_task(self, idx: int):
+        reply = QMessageBox.question(
+            self, "確認刪除",
+            f"確定要刪除任務 #{idx + 1} 嗎？\n（如果正在下載，會立即取消）",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.task_queue.remove_task(idx)
+        self.log_message.emit(f"[佇列] 刪除任務 #{idx + 1}")
+
+    def _on_start_all(self):
+        if not self.task_queue.tasks:
+            self.log_message.emit("[警告] 佇列係空嘅")
+            return
+        self._set_running(True)
+        self.task_queue.start_all()
+
+    def _on_clear_all(self):
+        if not self.task_queue.tasks:
+            return
+        reply = QMessageBox.question(
+            self, "確認清除",
+            f"確定要清除全部 {len(self.task_queue.tasks)} 條任務嗎？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.task_queue.clear_all()
+        self.task_list.clear()
+        self.task_widgets.clear()
+        self._set_running(False)
+        self.log_message.emit("[佇列] 已清除所有任務")
 
     # ---------- Cookie ----------
 
@@ -161,34 +292,28 @@ class DownloadPanel(QWidget):
         )
         if not path:
             return
-
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
                 first_lines = f.read(500)
         except Exception as e:
             QMessageBox.warning(self, "讀取失敗", f"無法讀取檔案：{e}")
             return
-
         if "Netscape" not in first_lines and "\t" not in first_lines:
             reply = QMessageBox.question(
                 self, "格式警告",
-                "呢個檔案睇落唔似標準 Netscape cookies.txt 格式。\n"
-                "yt-dlp 可能會讀唔到。要繼續匯入嗎？",
+                "呢個檔案睇落唔似標準 Netscape cookies.txt 格式。\n要繼續匯入嗎？",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-
         self.cookie_manager.set_cookie_path(path)
         self._load_cookie_state()
         self.log_message.emit(f"[Cookie] 已匯入：{path}")
-        self.status_message.emit("Cookie 已載入")
 
     def _on_clear_cookie(self):
         self.cookie_manager.clear_cookie()
         self._load_cookie_state()
         self.log_message.emit("[Cookie] 已清除")
-        self.status_message.emit("Cookie 已清除")
 
     # ---------- 事件 ----------
 
@@ -202,30 +327,38 @@ class DownloadPanel(QWidget):
         if not checked:
             self.mux_danmaku_check.setChecked(False)
 
-    def _on_download(self):
-        if self.worker and self.worker.isRunning():
-            self.log_message.emit("[警告] 已有下載進行中")
-            return
-
+    def _on_add_to_queue(self):
         url = self.url_input.text().strip()
         if not url:
             self.log_message.emit("[警告] 請先輸入網址")
             return
-
         options = self.get_options()
-        self.log_message.emit(f"[下載] 開始：{url}")
-        self.log_message.emit(f"[下載] 選項：{options}")
+        self.task_queue.add_task(url, options)
+        self.status_message.emit("已加入佇列")
 
-        self._set_running(True)
-        self.progress_bar.setValue(0)
-        self.status_message.emit("下載中…")
+    def _on_download(self):
+        url = self.url_input.text().strip()
+        if not url:
+            self.log_message.emit("[警告] 請先輸入網址")
+            return
+        self._on_add_to_queue()
+        if not self.task_queue.is_running:
+            self._set_running(True)
+            self.task_queue.start()
 
-        self.worker = DownloadWorker(url, options)
-        self.worker.log.connect(self.log_message.emit)
-        self.worker.progress.connect(self._on_progress)
-        self.worker.finished_ok.connect(self._on_finished_ok)
-        self.worker.finished_err.connect(self._on_finished_err)
-        self.worker.start()
+    def _on_cancel(self):
+        self.task_queue.cancel_current()
+
+    def _on_cancel_all(self):
+        self.task_queue.cancel_all()
+        self._set_running(False)
+        self.status_message.emit("已全部取消")
+
+    def _on_clear_done(self):
+        self.task_queue.clear_finished()
+        self._rebuild_task_list()
+
+    # ---------- 解析 ----------
 
     def _on_parse(self):
         url = self.url_input.text().strip()
@@ -256,58 +389,37 @@ class DownloadPanel(QWidget):
         dlg = PreviewDialog(items, self)
         if dlg.exec() == PreviewDialog.DialogCode.Accepted:
             if dlg.selected_urls:
-                self.url_input.setText(dlg.selected_urls[0])
+                options = self.get_options()
+                for url in dlg.selected_urls:
+                    self.task_queue.add_task(url, options)
                 self.log_message.emit(
-                    f"[解析] 已選 {len(dlg.selected_urls)} 條，"
-                    f"而家填入第一條，撳「開始下載」"
+                    f"[解析] 已加入 {len(dlg.selected_urls)} 條任務到佇列"
                 )
-                if len(dlg.selected_urls) > 1:
-                    self.log_message.emit(
-                        "[提示] 多條下載功能（C）尚未實作，"
-                        "目前只會下載第一條"
-                    )
+                if not self.task_queue.is_running:
+                    self._set_running(True)
+                    self.task_queue.start()
 
     def _on_parse_err(self, msg: str):
         self.status_message.emit("解析失敗")
         self.log_message.emit(f"[錯誤] {msg}")
         self.parse_btn.setEnabled(True)
 
-    def _on_cancel(self):
-        if self.worker and self.worker.isRunning():
-            self.log_message.emit("[取消] 正在終止下載…")
-            self.worker.cancel()
-
-    def _on_progress(self, percent: float, speed: str, eta: str, downloaded: str, total: str):
-        self.progress_bar.setValue(int(percent))
-        self.speed_label.setText(f"速度：{speed}")
-        self.eta_label.setText(f"剩餘：{eta}")
-        self.size_label.setText(f"大小：{downloaded} / {total}")
-
-    def _on_finished_ok(self, msg: str):
-        self.log_message.emit(f"[完成] {msg}")
-        self.status_message.emit("完成")
-        self.progress_bar.setValue(100)
-        self._set_running(False)
-
-    def _on_finished_err(self, msg: str):
-        self.log_message.emit(f"[錯誤] {msg}")
-        self.status_message.emit("失敗")
-        self._set_running(False)
-
     # ---------- 狀態切換 ----------
 
     def _set_running(self, running: bool):
         self.download_btn.setEnabled(not running)
-        self.parse_btn.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
         self.url_input.setEnabled(not running)
         self.platform_combo.setEnabled(not running)
         self.resolution_combo.setEnabled(not running)
         self.subtitle_combo.setEnabled(not running)
         self.danmaku_check.setEnabled(not running)
+        self.mux_danmaku_check.setEnabled(not running and self.danmaku_check.isChecked())
         self.browse_btn.setEnabled(not running)
         self.cookie_import_btn.setEnabled(not running)
         self.cookie_clear_btn.setEnabled(not running and bool(self.cookie_manager.get_cookie_path()))
+        self.parse_btn.setEnabled(not running)
+        self.add_queue_btn.setEnabled(not running)
 
     # ---------- 對外 ----------
 
