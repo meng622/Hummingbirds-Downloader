@@ -1,3 +1,5 @@
+<img width="1024" height="1024" alt="蜂鳥" src="https://github.com/user-attachments/assets/d7d36bf2-2151-4ef8-99df-ff7ca35c2ee2" />
+
 # 蜂鳥下載器 Hummingbirds Downloader
 ### 專為多平台影片下載打造的高效能綜合下載器
 ### A High-Performance Multi-Platform Video Downloader
