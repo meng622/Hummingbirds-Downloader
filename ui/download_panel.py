@@ -63,7 +63,13 @@ class DownloadPanel(QWidget):
         grid.addWidget(self.subtitle_combo, 1, 1)
 
         self.danmaku_check = QCheckBox("下載彈幕 (Bilibili)")
-        grid.addWidget(self.danmaku_check, 1, 2, 1, 2)
+        self.danmaku_check.toggled.connect(self._on_danmaku_toggled)
+        grid.addWidget(self.danmaku_check, 1, 2)
+
+        self.mux_danmaku_check = QCheckBox("合成彈幕")
+        self.mux_danmaku_check.setChecked(True)
+        self.mux_danmaku_check.setEnabled(False)
+        grid.addWidget(self.mux_danmaku_check, 1, 3)
 
         grid.addWidget(QLabel("輸出資料夾："), 2, 0)
         self.output_input = QLineEdit()
@@ -184,6 +190,11 @@ class DownloadPanel(QWidget):
         if folder:
             self.output_input.setText(folder)
 
+    def _on_danmaku_toggled(self, checked: bool):
+        self.mux_danmaku_check.setEnabled(checked)
+        if not checked:
+            self.mux_danmaku_check.setChecked(False)
+
     def _on_download(self):
         if self.worker and self.worker.isRunning():
             self.log_message.emit("[警告] 已有下載進行中")
@@ -253,6 +264,7 @@ class DownloadPanel(QWidget):
             "resolution": self.resolution_combo.currentText(),
             "subtitle": self.subtitle_combo.currentText(),
             "danmaku": self.danmaku_check.isChecked(),
+            "mux_danmaku": self.mux_danmaku_check.isChecked(),
             "output_dir": self.output_input.text().strip() or "./downloads",
             "cookie_path": self.cookie_manager.get_cookie_path(),
         }

@@ -192,10 +192,53 @@ class YtDlpDownloader:
             except Exception as e:
                 yield LogEvent(f"[警告] 掃描輸出資料夾失敗：{e}")
 
+        # B站彈幕
+        if code == 0 and options.get("danmaku") and "bilibili.com" in url:
+            yield from self._download_bilibili_danmaku(url, out_dir, options)
+
         if code == 0:
             yield FinishEvent(True, "下載完成 ✅")
         else:
             yield FinishEvent(False, f"yt-dlp 結束，返回碼 {code}")
+
+    def _download_bilibili_danmaku(self, url: str, out_dir: str, options: dict):
+        """B站彈幕下載（生成器）。"""
+        import re
+        m = re.search(r"(BV[0-9A-Za-z]+)", url)
+        if not m:
+            yield LogEvent("[彈幕] 無法從網址抽 BV 號")
+            return
+
+        bvid = m.group(1)
+        yield LogEvent(f"[彈幕] BV 號：{bvid}")
+
+        try:
+            from core.platforms.bilibili import BilibiliDanmaku
+        except ImportError as e:
+            yield LogEvent(f"[彈幕] 載入模組失敗：{e}")
+            return
+
+        dm = BilibiliDanmaku(options.get("cookie_path", ""))
+        cid = dm.get_cid(bvid)
+        if not cid:
+            yield LogEvent("[彈幕] 攞 cid 失敗，可能需要 Cookies")
+            return
+
+        yield LogEvent(f"[彈幕] cid = {cid}，開始下載…")
+        xml_path = dm.download_danmaku_xml(cid, out_dir)
+        if not xml_path:
+            yield LogEvent("[彈幕] 下載失敗，可能係付費或受限影片")
+            return
+
+        yield LogEvent(f"[彈幕] XML 已儲存：{xml_path}")
+
+        ass_path = xml_path.replace(".xml", ".ass")
+        ok, err = dm.xml_to_ass(xml_path, ass_path)
+        if not ok:
+            yield LogEvent(f"[彈幕] ASS 轉換失敗：{err}")
+            return
+
+        yield LogEvent(f"[彈幕] ASS 已轉換：{ass_path}")
 
     # ---------- 取消 ----------
 
