@@ -12,7 +12,7 @@ class LogPanel(QWidget):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(8, 8, 8, 8)
 
         # 標題列
         header = QHBoxLayout()
