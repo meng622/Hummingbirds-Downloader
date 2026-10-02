@@ -1,3 +1,4 @@
+<img width="1024" height="1024" alt="蜂鳥" src="https://github.com/user-attachments/assets/08bb6d2d-9505-4cf2-b4e3-bb7817bd6403" />
 # 蜂鳥下載器
 
 PyQt6 + yt-dlp 嘅綜合影片下載器，支援多平台、彈幕、字幕、多任務。
