@@ -49,7 +49,7 @@ from ui.main_window import MainWindow
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("綜合下載器")
+    app.setApplicationName("蜂鳥下載器")
 
     window = MainWindow()
     window.show()
