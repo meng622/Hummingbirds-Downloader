@@ -203,6 +203,29 @@ class YtDlpDownloader:
         if code == 0 and options.get("danmaku") and "bilibili.com" in url:
             yield from self._download_bilibili_danmaku(url, out_dir, options)
 
+        # YouTube 字幕合成
+        if code == 0 and options.get("mux_danmaku") and "youtube.com" in url:
+            sub_choice = options.get("subtitle", "不下載")
+            if sub_choice != "不下載":
+                video_path = self._find_latest_video(out_dir)
+                if video_path:
+                    sub_path = self._find_subtitle_for(video_path, out_dir)
+                    if sub_path:
+                        yield LogEvent(f"[字幕] 搵到字幕：{sub_path}")
+                        yield LogEvent(f"[字幕] 開始 mux：{video_path}")
+                        ok, result = self._mux_youtube_subtitle(video_path, sub_path, out_dir)
+                        if ok:
+                            yield LogEvent(f"[字幕] 完成：{result}")
+                            try:
+                                os.remove(video_path)
+                                yield LogEvent(f"[字幕] 已刪除原片：{video_path}")
+                            except Exception as e:
+                                yield LogEvent(f"[字幕] 刪除原片失敗：{e}")
+                        else:
+                            yield LogEvent(f"[字幕] mux 失敗：{result}")
+                    else:
+                        yield LogEvent("[字幕] 搵唔到對應嘅字幕檔")
+
         if code == 0:
             yield FinishEvent(True, "下載完成 ✅")
         else:
@@ -313,6 +336,54 @@ class YtDlpDownloader:
             return True, output_path
         except Exception as e:
             return False, str(e)
+
+    def _mux_youtube_subtitle(self, video_path: str, sub_path: str, out_dir: str) -> tuple[bool, str]:
+        """用 mkvmerge 將字幕合成為 MKV 字幕軌。成功返回 (True, mkv 路徑)，失敗返回 (False, 錯誤訊息)。"""
+        import subprocess
+
+        base = os.path.dirname(os.path.abspath(self.ytdlp_path))
+        mkvmerge = os.path.join(base, "mkvmerge.exe")
+        if not os.path.isfile(mkvmerge):
+            return False, f"搵唔到 mkvmerge.exe：{mkvmerge}"
+
+        name, _ = os.path.splitext(video_path)
+        output_path = f"{name}.mkv"
+
+        args = [
+            mkvmerge,
+            "-o", output_path,
+            "--language", "0:chi",
+            "--track-name", "0:字幕",
+            video_path,
+            sub_path,
+        ]
+
+        try:
+            result = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform.startswith("win") else 0,
+            )
+            if result.returncode != 0:
+                return False, result.stdout[-500:] if result.stdout else "mkvmerge 執行失敗"
+            return True, output_path
+        except Exception as e:
+            return False, str(e)
+
+    def _find_subtitle_for(self, video_path: str, out_dir: str) -> str | None:
+        """搵同影片同名嘅字幕檔（.srt / .vtt / .ass）。"""
+        name, _ = os.path.splitext(os.path.basename(video_path))
+        try:
+            for f in os.listdir(out_dir):
+                if f.startswith(name) and f.lower().endswith((".srt", ".vtt", ".ass")):
+                    return os.path.join(out_dir, f)
+        except Exception:
+            pass
+        return None
 
     @staticmethod
     def _find_latest_video(out_dir: str) -> str | None:
