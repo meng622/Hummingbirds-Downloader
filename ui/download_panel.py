@@ -3,11 +3,13 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
     QLabel, QLineEdit, QComboBox, QPushButton,
-    QCheckBox, QGroupBox, QFileDialog, QProgressBar
+    QCheckBox, QGroupBox, QFileDialog, QProgressBar,
+    QMessageBox
 )
 from PyQt6.QtCore import pyqtSignal
 
 from core.worker import DownloadWorker
+from core.cookie_manager import CookieManager
 
 
 class DownloadPanel(QWidget):
@@ -17,7 +19,9 @@ class DownloadPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.worker: DownloadWorker | None = None
+        self.cookie_manager = CookieManager()
         self._init_ui()
+        self._load_cookie_state()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
@@ -70,6 +74,24 @@ class DownloadPanel(QWidget):
         self.browse_btn.clicked.connect(self._on_browse)
         grid.addWidget(self.browse_btn, 2, 3)
 
+        # ---- Cookie 區 ----
+        grid.addWidget(QLabel("Cookies："), 3, 0)
+        self.cookie_label = QLabel("未匯入")
+        self.cookie_label.setStyleSheet("color: #888;")
+        grid.addWidget(self.cookie_label, 3, 1, 1, 2)
+
+        cookie_btn_layout = QHBoxLayout()
+        self.cookie_import_btn = QPushButton("匯入…")
+        self.cookie_import_btn.clicked.connect(self._on_import_cookie)
+        cookie_btn_layout.addWidget(self.cookie_import_btn)
+
+        self.cookie_clear_btn = QPushButton("清除")
+        self.cookie_clear_btn.clicked.connect(self._on_clear_cookie)
+        self.cookie_clear_btn.setEnabled(False)
+        cookie_btn_layout.addWidget(self.cookie_clear_btn)
+
+        grid.addLayout(cookie_btn_layout, 3, 3)
+
         layout.addWidget(options_group)
 
         # 進度區
@@ -106,6 +128,54 @@ class DownloadPanel(QWidget):
         btn_layout.addWidget(self.cancel_btn)
 
         layout.addLayout(btn_layout)
+
+    # ---------- Cookie ----------
+
+    def _load_cookie_state(self):
+        path = self.cookie_manager.get_cookie_path()
+        if path:
+            self.cookie_label.setText(f"已載入：{os.path.basename(path)}")
+            self.cookie_label.setStyleSheet("color: #2e7d32;")
+            self.cookie_clear_btn.setEnabled(True)
+        else:
+            self.cookie_label.setText("未匯入")
+            self.cookie_label.setStyleSheet("color: #888;")
+            self.cookie_clear_btn.setEnabled(False)
+
+    def _on_import_cookie(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "選擇 cookies.txt", "", "Cookies 檔案 (*.txt);;所有檔案 (*)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                first_lines = f.read(500)
+        except Exception as e:
+            QMessageBox.warning(self, "讀取失敗", f"無法讀取檔案：{e}")
+            return
+
+        if "Netscape" not in first_lines and "\t" not in first_lines:
+            reply = QMessageBox.question(
+                self, "格式警告",
+                "呢個檔案睇落唔似標準 Netscape cookies.txt 格式。\n"
+                "yt-dlp 可能會讀唔到。要繼續匯入嗎？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        self.cookie_manager.set_cookie_path(path)
+        self._load_cookie_state()
+        self.log_message.emit(f"[Cookie] 已匯入：{path}")
+        self.status_message.emit("Cookie 已載入")
+
+    def _on_clear_cookie(self):
+        self.cookie_manager.clear_cookie()
+        self._load_cookie_state()
+        self.log_message.emit("[Cookie] 已清除")
+        self.status_message.emit("Cookie 已清除")
 
     # ---------- 事件 ----------
 
@@ -172,6 +242,8 @@ class DownloadPanel(QWidget):
         self.subtitle_combo.setEnabled(not running)
         self.danmaku_check.setEnabled(not running)
         self.browse_btn.setEnabled(not running)
+        self.cookie_import_btn.setEnabled(not running)
+        self.cookie_clear_btn.setEnabled(not running and bool(self.cookie_manager.get_cookie_path()))
 
     # ---------- 對外 ----------
 
@@ -182,4 +254,5 @@ class DownloadPanel(QWidget):
             "subtitle": self.subtitle_combo.currentText(),
             "danmaku": self.danmaku_check.isChecked(),
             "output_dir": self.output_input.text().strip() or "./downloads",
+            "cookie_path": self.cookie_manager.get_cookie_path(),
         }

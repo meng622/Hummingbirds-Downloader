@@ -108,6 +108,11 @@ class YtDlpDownloader:
         # 唔要 info.json
         args += ["--no-write-info-json"]
 
+        # Cookie（如果有設定）
+        cookie_path = options.get("cookie_path", "").strip()
+        if cookie_path and os.path.isfile(cookie_path):
+            args += ["--cookies", cookie_path]
+
         args.append(url)
         return args
 
