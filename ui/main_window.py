@@ -14,8 +14,8 @@ from core.theme_manager import ThemeManager, THEME_SYSTEM, THEME_LIGHT, THEME_DA
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("綜合下載器 v0.1")
-        self.resize(1100, 700)
+        self.setWindowTitle("蜂鳥下載器 Hummingbirds Downloader v1.0")
+        self.resize(1280, 720)
 
         self.theme_manager = ThemeManager(QApplication.instance())
         self.theme_manager.apply()
