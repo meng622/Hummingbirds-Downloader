@@ -69,7 +69,7 @@ class YtDlpDownloader:
             "--no-color",
             "--progress",
             "--progress-template",
-            "PROGRESS|%(progress._percent_str)s|%(progress._speed_str)s|"
+            "PROGRESS|%(progress._percent_str)s|%(progress.speed)s|"
             "%(progress._eta_str)s|%(progress.downloaded_bytes)s|"
             "%(progress.total_bytes_estimate)s",
         ]
@@ -139,6 +139,7 @@ class YtDlpDownloader:
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+        env["PYTHONLEGACYWINDOWSSTDIO"] = "0"
 
         try:
             self._process = subprocess.Popen(
@@ -157,12 +158,6 @@ class YtDlpDownloader:
             yield FinishEvent(False, f"啟動 yt-dlp 失敗：{e}")
             return
 
-        if self.on_process_start and self._process:
-            try:
-                self.on_process_start(self._process.pid)
-            except Exception:
-                pass
-
         progress_re = re.compile(
             r"PROGRESS\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)"
         )
@@ -179,11 +174,20 @@ class YtDlpDownloader:
                 percent_str, speed, eta, downloaded, total = m.groups()
                 yield ProgressEvent(
                     percent=self._parse_percent(percent_str),
-                    speed=speed.strip() or "—",
+                    speed=self._fmt_speed(speed.strip()) if speed.strip() not in ("", "NA", "None") else "—",
                     eta=eta.strip() or "—",
                     downloaded=self._fmt_bytes(downloaded.strip()),
                     total=self._fmt_bytes(total.strip()),
                 )
+                continue
+
+            # 過濾 yt-dlp 亂碼行
+            if line.startswith("[MetadataParser]") and "Changed title to:" in line:
+                yield LogEvent("[資訊] 標題已清理")
+                continue
+
+            # 過濾含替換字元（亂碼）嘅行
+            if "\ufffd" in line:
                 continue
 
             # 其他輸出
@@ -193,7 +197,7 @@ class YtDlpDownloader:
         code = self._process.wait()
         self._process = None
 
-        # 自己掃描輸出資料夾，搵最新檔案（避免 yt-dlp 中文路徑亂碼）
+        # 掃描輸出資料夾
         if code == 0:
             try:
                 files = [
@@ -418,6 +422,21 @@ class YtDlpDownloader:
     # ---------- 工具 ----------
 
     @staticmethod
+    def _fmt_speed(s: str) -> str:
+        if not s or s in ("NA", "None"):
+            return "—"
+        try:
+            n = float(s)
+        except ValueError:
+            return s
+        units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"]
+        i = 0
+        while n >= 1024 and i < len(units) - 1:
+            n /= 1024
+            i += 1
+        return f"{n:.2f} {units[i]}"
+
+    @staticmethod
     def _parse_percent(s: str) -> float:
         s = s.strip().replace("%", "")
         try:
@@ -433,9 +452,9 @@ class YtDlpDownloader:
             n = float(s)
         except ValueError:
             return s
-        units = ["B", "KiB", "MiB", "GiB", "TiB"]
+        units = ["B", "KB", "MB", "GB", "TB"]
         i = 0
         while n >= 1024 and i < len(units) - 1:
             n /= 1024
             i += 1
-        return f"{n:.2f}{units[i]}"
+        return f"{n:.2f} {units[i]}"

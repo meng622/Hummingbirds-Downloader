@@ -1,6 +1,13 @@
 import os
 import sys
 
+if sys.platform.startswith("win"):
+    try:
+        import ctypes
+        # 設定 console 輸出為 UTF-8
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:
+        pass
 
 # ---------- Portable 路徑處理 ----------
 def get_app_dir():

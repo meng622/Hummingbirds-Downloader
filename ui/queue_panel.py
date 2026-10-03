@@ -180,7 +180,10 @@ class QueuePanel(QWidget):
     def _on_progress_info(self, percent: float, speed: str, eta: str, downloaded: str, total: str):
         self.speed_label.setText(f"速度：{speed}")
         self.eta_label.setText(f"剩餘：{eta}")
-        self.size_label.setText(f"大小：{downloaded} / {total}")
+        if total and total != "—":
+            self.size_label.setText(f"大小：{downloaded} / {total}")
+        else:
+            self.size_label.setText(f"大小：{downloaded}")
 
     # ---------- 任務操作 ----------
 
@@ -234,18 +237,24 @@ class QueuePanel(QWidget):
         self.status_message.emit("已加入佇列")
 
     def _on_download(self):
+        # 如果佇列已有任務，直接開始（唔加新任務）
+        if self.task_queue.tasks:
+            if not self.task_queue.is_running:
+                self._set_running(True)
+                self.task_queue.start()
+                self.log_message.emit("[佇列] 開始執行已有任務")
+            else:
+                self.log_message.emit("[提示] 佇列已在執行中")
+            return
+
+        # 佇列係空，加入新任務並開始
         url = self.options_panel.get_url()
-
-        # 如果網址欄有嘢，而且同佇列入面任何一條都唔同，就加入新任務
-        if url:
-            url_exists = any(t.url == url for t in self.task_queue.tasks)
-            if not url_exists:
-                self._on_add_to_queue()
-
-        # 開始執行
-        if not self.task_queue.is_running:
-            self._set_running(True)
-            self.task_queue.start()
+        if not url:
+            self.log_message.emit("[警告] 請先輸入網址")
+            return
+        self._on_add_to_queue()
+        self._set_running(True)
+        self.task_queue.start()
 
     def _on_cancel(self):
         self.task_queue.cancel_current()
