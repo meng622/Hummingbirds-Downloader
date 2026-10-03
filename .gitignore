@@ -27,7 +27,6 @@ config.json
 yt-dlp.exe
 ffmpeg.exe
 ffprobe.exe
-ffplay.exe
 mkvmerge.exe
 
 # IDE

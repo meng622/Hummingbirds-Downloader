@@ -53,7 +53,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="蜂鳥下載器",
+    name="蜂鳥下載器 Hummingbirds Downloader v1.0.2",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -74,5 +74,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="蜂鳥下載器",
+    name="蜂鳥下載器 Hummingbirds Downloader v1.0.2",
 )
