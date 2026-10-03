@@ -20,7 +20,6 @@ binaries = [
     (os.path.join(ROOT, "yt-dlp.exe"), "."),
     (os.path.join(ROOT, "ffmpeg.exe"), "."),
     (os.path.join(ROOT, "ffprobe.exe"), "."),
-    (os.path.join(ROOT, "ffplay.exe"), "."),
     (os.path.join(ROOT, "mkvmerge.exe"), "."),
 ]
 
